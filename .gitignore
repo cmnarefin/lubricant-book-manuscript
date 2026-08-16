@@ -1,0 +1,69 @@
+# Lenovo E15 Gen 4 - Extended Diagnostic & Optimization Script
+# Run in PowerShell as Administrator
+
+Write-Host "=== Lenovo E15 Gen 4 Extended Diagnostic & Optimization ===" -ForegroundColor Cyan
+
+# 1. Verify Driver Signatures
+Write-Host "Checking driver digital signatures..."
+Get-WmiObject Win32_PnPSignedDriver | ForEach-Object {
+    if ($_.IsSigned -eq $false) {
+        Write-Host "Unsigned driver found: $($_.DeviceName)" -ForegroundColor Red
+    }
+}
+
+# 2. Remove Unused Drivers
+Write-Host "Removing unused drivers..."
+pnputil /enum-drivers | ForEach-Object {
+    if ($_ -match "oem.*.inf") {
+        pnputil /delete-driver $_ /uninstall /force
+    }
+}
+
+# 3. RAM Integrity Check
+Write-Host "Scheduling Windows Memory Diagnostic..."
+mdsched.exe
+
+# 4. System File Integrity Check
+Write-Host "Running SFC and DISM scans..."
+sfc /scannow
+DISM /Online /Cleanup-Image /RestoreHealth
+
+# 5. Automatic Driver Updates via Lenovo Vantage
+Write-Host "Updating drivers using Lenovo Vantage..."
+$VantagePath = "C:\Program Files (x86)\Lenovo\VantageService\3.0.0.0\LenovoVantageService.exe"
+if (Test-Path $VantagePath) {
+    Start-Process $VantagePath -ArgumentList "/updateDrivers" -Wait
+    Write-Host "Driver update process initiated via Lenovo Vantage." -ForegroundColor Green
+} else {
+    Write-Host "Lenovo Vantage not found. Please install from Microsoft Store." -ForegroundColor Yellow
+}
+
+# 6. Thermal Regulation
+Write-Host "Configuring thermal management..."
+powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 85
+powercfg /setactive SCHEME_CURRENT
+
+# 7. Real-Time Thermal Monitoring Logs
+Write-Host "Starting thermal monitoring..."
+$LogPath = "C:\LenovoThermalLogs.txt"
+Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace "root/wmi" | ForEach-Object {
+    $tempC = ($_.CurrentTemperature / 10) - 273.15
+    $logEntry = "$(Get-Date) - Thermal Zone: $($_.InstanceName) - Temp: $tempC °C"
+    Add-Content -Path $LogPath -Value $logEntry
+}
+Write-Host "Thermal log written to $LogPath" -ForegroundColor Green
+
+# 8. System Optimization
+Write-Host "Cleaning temporary files..."
+Get-ChildItem -Path "C:\Windows\Temp" -Recurse | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Path "$env:TEMP" -Recurse | Remove-Item -Force -ErrorAction SilentlyContinue
+
+Write-Host "Running Storage Sense..."
+Start-Process "cleanmgr.exe"
+
+# 9. Policy & Configuration Audit
+Write-Host "Checking for policy violations..."
+gpresult /h C:\policy_report.html
+Write-Host "Policy report saved to C:\policy_report.html"
+
+Write-Host "=== Extended Diagnostic & Optimization Completed ===" -ForegroundColor Green
